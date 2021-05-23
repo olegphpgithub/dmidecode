@@ -1,0 +1,212 @@
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.8-orig/AUTHORS dmidecode-2.8-src/AUTHORS
+--- dmidecode-2.8-orig/AUTHORS	2006-01-22 00:08:35.000000000 +0100
++++ dmidecode-2.8-src/AUTHORS	2006-11-15 16:27:02.000000000 +0100
+@@ -63,3 +63,4 @@ Torsten Seemann
+ Garry Belka
+ Klaus Muth
+ Antoine Fuselier
++Mark Russinovich
+\ Geen witregel na einde bestand
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.8-orig/dmidecode.c dmidecode-2.8-src/dmidecode.c
+--- dmidecode-2.8-orig/dmidecode.c	2005-10-06 19:51:12.000000000 +0200
++++ dmidecode-2.8-src/dmidecode.c	2007-02-12 15:59:50.000000000 +0100
+@@ -63,16 +63,13 @@
+ #include "dmidecode.h"
+ #include "dmiopt.h"
+ 
++#ifdef __WIN32__
++#include "winsmbios.h"
++#endif /*__WIN32__*/
++
+ static const char *out_of_spec = "<OUT OF SPEC>";
+ static const char *bad_index = "<BAD INDEX>";
+ 
+-struct dmi_header
+-{
+-	u8 type;
+-	u8 length;
+-	u16 handle;
+-};
+-
+ #ifdef ALIGNMENT_WORKAROUND
+ #define HANDLE(x) WORD((u8 *)&(x->handle))
+ #else
+@@ -3803,6 +3800,7 @@ static void dmi_decode(u8 *data, u16 ver
+ 		
+ static void dmi_table(u32 base, u16 len, u16 num, u16 ver, const char *devmem)
+ {
++	
+ 	u8 *buf;
+ 	u8 *data;
+ 	int i=0;
+@@ -3816,6 +3814,19 @@ static void dmi_table(u32 base, u16 len,
+ 		printf("\n");
+ 	}
+ 	
++	/*
++	 * if devmem is NULL then base has the SMBIOS Table address
++	 * already allocated and not the physical memory address that 
++	 * needs to be mapped.
++	 * This change was made to support Windows 2003 that blocks
++	 * access to physical memory but returns the SMBIOS Table
++	 * througth GetSystemFirmwareTable API.
++	 *
++	 * see more on winsmbios.h and winsmbios.c
++	 */	
++	if(devmem == NULL){
++            buf = (u8 *)base;
++        }else{
+ 	if((buf=mem_chunk(base, len, devmem))==NULL)
+ 	{
+ #ifndef USE_MMAP
+@@ -3823,6 +3834,7 @@ static void dmi_table(u32 base, u16 len,
+ #endif
+ 		return;
+ 	}
++        }
+ 	
+ 	data=buf;
+ 	while(i<num && data+sizeof(struct dmi_header)<=buf+len)
+@@ -3931,12 +3943,24 @@ int main(int argc, char * const argv[])
+ 	int ret=0;                  /* Returned value */
+ 	int found=0;
+ 	size_t fp;
++	u8 *buf;	
+ #ifdef USE_EFI
+ 	FILE *efi_systab;
+ 	const char *filename;
+ 	char linebuf[64];
+ #endif /* USE_EFI */
+-	u8 *buf;
++
++#ifdef __WIN32__
++    /*
++     * these varibles are used only when run on windows 2003 or above.
++     * Since these versions block access to physical memory.
++     * Windows NT, 2000 and XP still accessing physical memory througth
++     * mem_chunck
++     */
++    int num_structures = 0;
++    PRawSMBIOSData smb = NULL;
++#endif /*__WIN32__*/
++            
+ 	
+ 	if(sizeof(u8)!=1 || sizeof(u16)!=2 || sizeof(u32)!=4 || '\0'!=0)
+ 	{
+@@ -4013,6 +4037,56 @@ int main(int argc, char * const argv[])
+ 	
+ 	free(buf);
+ #else /* USE_EFI */
++
++    /*
++     * If running on windows, checks if its Windows 2003 or vista and
++     * get the SMBIOS data without access to physical memory.
++     * If its Windows NT, 2000 or XP, access the physical memory and
++     * scans for SMBIOS table entry point, just like all other OS.
++     * If its Windows 9x or Me, print error and exits.
++     */
++#ifdef __WIN32__
++    switch(get_windows_platform()){
++                                   
++        case WIN_2003_VISTA://gets the SMBIOS table, prints values and exits
++
++            //loads the GetSystemFirmwareTable function
++            if(!LocateNtdllEntryPoints()){
++       	        return printf("erro ao carregar a dll");
++                goto exit_free;             	
++            }
++
++            //gets the raw smbios table
++            smb = get_raw_smbios_table();
++            num_structures = count_smbios_structures(&smb->SMBIOSTableData[0], smb->Length);
++
++    		if(!(opt.flags & FLAG_QUIET)){
++    			printf("SMBIOS %u.%u present.\n", smb->SMBIOSMajorVersion, 
++                    smb->SMBIOSMinorVersion);
++            }
++            
++            //shows the smbios information
++	    dmi_table((u32)&smb->SMBIOSTableData[0], smb->Length, num_structures,
++    			(smb->SMBIOSMajorVersion<<8)+smb->SMBIOSMinorVersion, NULL);   
++            
++            free(smb);
++            goto exit_free;
++        break;
++        
++        case WIN_UNSUPORTED://prints error and exits
++            printf("\nDMIDECODE runs on Windows NT/2000/XP. Windows 9x/Me are not supported.\n");
++            goto exit_free;
++        break;
++        
++        default:
++            /*
++             * do nothing. Follow the code below, scans for the 
++             * SMBIOS table entry point, etc...
++             */
++        break;
++    }
++#endif  /*__WIN32__*/
++    
+ 	if((buf=mem_chunk(0xF0000, 0x10000, opt.devmem))==NULL)
+ 	{
+ 		ret=1;
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.8-orig/types.h dmidecode-2.8-src/types.h
+--- dmidecode-2.8-orig/types.h	2004-04-22 22:08:09.000000000 +0200
++++ dmidecode-2.8-src/types.h	2006-11-15 16:42:30.000000000 +0100
+@@ -6,6 +6,13 @@ typedef unsigned short u16;
+ typedef signed short i16;
+ typedef unsigned int u32;
+ 
++struct dmi_header
++{
++	u8 type;
++	u8 length;
++	u16 handle;
++};
++
+ /*
+  * These macros help us solve problems on systems that don't support
+  * non-aligned memory access. This isn't a big issue IMHO, since the tools
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.8-orig/util.c dmidecode-2.8-src/util.c
+--- dmidecode-2.8-orig/util.c	2005-02-12 17:53:19.000000000 +0100
++++ dmidecode-2.8-src/util.c	2006-11-15 16:27:04.000000000 +0100
+@@ -30,12 +30,18 @@
+ 
+ #include "config.h"
+ 
++#ifdef __WIN32__
++    #include "winsmbios.h"
++#else
+ #ifdef USE_MMAP
+ #include <sys/mman.h>
+ #ifndef MAP_FAILED
+ #define MAP_FAILED ((void *) -1)
+ #endif /* !MAP_FAILED */
+ #endif /* USE MMAP */
++#endif /* __WIN32__ */
++
++
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -90,6 +96,15 @@ int checksum(const u8 *buf, size_t len)
+ 	return (sum==0);
+ }
+ 
++
++#ifdef __WIN32__
++
++void *mem_chunk(size_t base, size_t len, const char *devmem){
++	return mem_chunk_win(base, len);
++}
++
++#else
++
+ /*
+  * Copy a physical memory chunk into a memory buffer.
+  * This function allocates memory.
+@@ -163,3 +178,4 @@ void *mem_chunk(size_t base, size_t len,
+ 	
+ 	return p;
+ }
++#endif /* __WIN32__ */

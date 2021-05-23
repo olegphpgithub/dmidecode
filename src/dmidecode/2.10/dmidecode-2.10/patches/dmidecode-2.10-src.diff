@@ -1,0 +1,326 @@
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.10-orig/Makefile dmidecode-2.10-src/Makefile
+--- dmidecode-2.10-orig/Makefile	2008-02-16 19:55:52.000000000 +0100
++++ dmidecode-2.10-src/Makefile	2008-11-24 23:18:42.718750000 +0100
+@@ -15,18 +15,18 @@ CFLAGS  = -W -Wall -Wshadow -Wstrict-pro
+ #CFLAGS += -DALIGNMENT_WORKAROUND
+ 
+ # When debugging, disable -O2 and enable -g.
+-CFLAGS += -O2
++CFLAGS += -O3
+ #CFLAGS += -g
+ 
+ # Pass linker flags here
+ LDFLAGS =
+ 
+ DESTDIR =
+-prefix  = /usr/local
++prefix  = C:/Progra~1/DmiDecode
+ sbindir = $(prefix)/sbin
+-mandir  = $(prefix)/share/man
++mandir  = $(prefix)/man
+ man8dir = $(mandir)/man8
+-docdir  = $(prefix)/share/doc/dmidecode
++docdir  = $(prefix)/doc
+ 
+ INSTALL         := install
+ INSTALL_DATA    := $(INSTALL) -m 644
+@@ -34,8 +34,8 @@ INSTALL_DIR     := $(INSTALL) -m 755 -d
+ INSTALL_PROGRAM := $(INSTALL) -m 755
+ RM              := rm -f
+ 
+-PROGRAMS := dmidecode
+-PROGRAMS += $(shell test `uname -m 2>/dev/null` != ia64 && echo biosdecode ownership vpddecode)
++PROGRAMS := dmidecode$(EXEEXT)
++PROGRAMS += $(shell test `uname -m 2>/dev/null` != ia64 && echo biosdecode$(EXEEXT) ownership$(EXEEXT) vpddecode$(EXEEXT))
+ # BSD make doesn't understand the $(shell) syntax above, it wants the !=
+ # syntax below. GNU make ignores the line below so in the end both BSD
+ # make and GNU make are happy.
+@@ -47,17 +47,17 @@ all : $(PROGRAMS)
+ # Programs
+ #
+ 
+-dmidecode : dmidecode.o dmiopt.o dmioem.o util.o
+-	$(CC) $(LDFLAGS) dmidecode.o dmiopt.o dmioem.o util.o -o $@
++dmidecode$(EXEEXT) : dmidecode.o dmiopt.o dmioem.o util.o winsmbios.o dmidecode-res.o 
++	$(CC) $(LDFLAGS) dmidecode.o dmiopt.o dmioem.o util.o winsmbios.o dmidecode-res.o -o $@
+ 
+-biosdecode : biosdecode.o util.o
+-	$(CC) $(LDFLAGS) biosdecode.o util.o -o $@
++biosdecode$(EXEEXT) : biosdecode.o util.o winsmbios.o biosdecode-res.o
++	$(CC) $(LDFLAGS) biosdecode.o util.o winsmbios.o biosdecode-res.o -o $@
+ 
+-ownership : ownership.o util.o
+-	$(CC) $(LDFLAGS) ownership.o util.o -o $@
++ownership$(EXEEXT) : ownership.o util.o winsmbios.o ownership-res.o
++	$(CC) $(LDFLAGS) ownership.o util.o winsmbios.o ownership-res.o -o $@
+ 
+-vpddecode : vpddecode.o vpdopt.o util.o
+-	$(CC) $(LDFLAGS) vpddecode.o vpdopt.o util.o -o $@
++vpddecode$(EXEEXT) : vpddecode.o vpdopt.o util.o winsmbios.o vpddecode-res.o
++	$(CC) $(LDFLAGS) vpddecode.o vpdopt.o util.o winsmbios.o vpddecode-res.o -o $@
+ 
+ #
+ # Objects
+@@ -88,6 +88,10 @@ vpdopt.o : vpdopt.c config.h util.h vpdo
+ util.o : util.c types.h util.h config.h
+ 	$(CC) $(CFLAGS) -c $< -o $@
+ 
++winsmbios.o : winsmbios.c types.h winsmbios.h config.h
++	$(CC) $(CFLAGS) -c $< -o $@
++	
++
+ #
+ # Commands
+ #
+@@ -111,7 +115,7 @@ uninstall-bin :
+ install-man :
+ 	$(INSTALL_DIR) $(DESTDIR)$(man8dir)
+ 	for program in $(PROGRAMS) ; do \
+-	$(INSTALL_DATA) man/$$program.8 $(DESTDIR)$(man8dir) ; done
++	$(INSTALL_DATA) $(SRCDIRSL)man/$${program%.exe}.8 $(DESTDIR)$(man8dir) ; done
+ 
+ uninstall-man :
+ 	for program in $(PROGRAMS) ; do \
+@@ -119,9 +123,9 @@ uninstall-man :
+ 
+ install-doc :
+ 	$(INSTALL_DIR) $(DESTDIR)$(docdir)
+-	$(INSTALL_DATA) README $(DESTDIR)$(docdir)
+-	$(INSTALL_DATA) CHANGELOG $(DESTDIR)$(docdir)
+-	$(INSTALL_DATA) AUTHORS $(DESTDIR)$(docdir)
++	$(INSTALL_DATA) $(SRCDIRSL)README $(DESTDIR)$(docdir)
++	$(INSTALL_DATA) $(SRCDIRSL)CHANGELOG $(DESTDIR)$(docdir)
++	$(INSTALL_DATA) $(SRCDIRSL)AUTHORS $(DESTDIR)$(docdir)
+ 
+ uninstall-doc :
+ 	$(RM) -r $(DESTDIR)$(docdir)
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.10-orig/config.h dmidecode-2.10-src/config.h
+--- dmidecode-2.10-orig/config.h	2007-07-02 17:56:45.000000000 +0200
++++ dmidecode-2.10-src/config.h	2008-11-24 21:54:15.593750000 +0100
+@@ -17,7 +17,7 @@
+ #endif
+ 
+ /* Use mmap or not */
+-#ifndef __BEOS__
++#if !defined __BEOS__ && !defined _WIN32
+ #define USE_MMAP
+ #endif
+ 
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.10-orig/dmidecode.c dmidecode-2.10-src/dmidecode.c
+--- dmidecode-2.10-orig/dmidecode.c	2008-11-14 11:27:31.000000000 +0100
++++ dmidecode-2.10-src/dmidecode.c	2008-11-24 23:04:18.546875000 +0100
+@@ -63,6 +63,10 @@
+ #include "dmiopt.h"
+ #include "dmioem.h"
+ 
++#ifdef _WIN32
++#include "winsmbios.h"
++#endif /* _WIN32 */
++
+ #define out_of_spec "<OUT OF SPEC>"
+ static const char *bad_index = "<BAD INDEX>";
+ 
+@@ -4001,6 +4005,7 @@ static void dmi_table_dump(u32 base, u16
+ 
+ static void dmi_table(u32 base, u16 len, u16 num, u16 ver, const char *devmem)
+ {
++	
+ 	u8 *buf;
+ 	u8 *data;
+ 	int i = 0;
+@@ -4022,7 +4027,20 @@ static void dmi_table(u32 base, u16 len,
+ 		}
+ 		printf("\n");
+ 	}
+-
++	/*
++	 * if devmem is NULL then base has the SMBIOS Table address
++	 * already allocated and not the physical memory address that 
++	 * needs to be mapped.
++	 * This change was made to support Windows 2003 that blocks
++	 * access to physical memory but returns the SMBIOS Table
++	 * througth GetSystemFirmwareTable API.
++	 *
++	 * see more on winsmbios.h and winsmbios.c
++	 */	
++	if (devmem == NULL) 
++	{
++          buf = (u8 *)base;
++     } else {
+ 	if ((buf = mem_chunk(base, len, devmem)) == NULL)
+ 	{
+ 		fprintf(stderr, "Table is unreachable, sorry."
+@@ -4032,7 +4050,7 @@ static void dmi_table(u32 base, u16 len,
+ 			"\n");
+ 		return;
+ 	}
+-
++	}
+ 	data = buf;
+ 	while (i < num && data+4 <= buf + len) /* 4 is the length of an SMBIOS structure header */
+ 	{
+@@ -4259,6 +4277,17 @@ int main(int argc, char * const argv[])
+ 	int efi;
+ 	u8 *buf;
+ 
++#ifdef _WIN32
++    /*
++     * these varibles are used only when run on windows 2003 or above.
++     * Since these versions block access to physical memory.
++     * Windows NT, 2000 and XP still accessing physical memory througth
++     * mem_chunck
++     */
++    int num_structures = 0;
++    PRawSMBIOSData smb = NULL;
++#endif /* _WIN32 */
++	
+ 	if (sizeof(u8) != 1 || sizeof(u16) != 2 || sizeof(u32) != 4 || '\0' != 0)
+ 	{
+ 		fprintf(stderr, "%s: compiler incompatibility\n", argv[0]);
+@@ -4338,6 +4367,56 @@ int main(int argc, char * const argv[])
+ 
+ memory_scan:
+ 	/* Fallback to memory scan (x86, x86_64) */
++		
++    /*
++     * If running on windows, checks if its Windows 2003 or vista and
++     * get the SMBIOS data without access to physical memory.
++     * If its Windows NT, 2000 or XP, access the physical memory and
++     * scans for SMBIOS table entry point, just like all other OS.
++     * If its Windows 9x or Me, print error and exits.
++     */
++#ifdef __WIN32__
++    switch(get_windows_platform()){
++                                   
++        case WIN_2003_VISTA://gets the SMBIOS table, prints values and exits
++
++            //loads the GetSystemFirmwareTable function
++            if(!LocateNtdllEntryPoints()){
++       	        return printf("erro ao carregar a dll");
++                goto exit_free;             	
++            }
++
++            //gets the raw smbios table
++            smb = get_raw_smbios_table();
++            num_structures = count_smbios_structures(&smb->SMBIOSTableData[0], smb->Length);
++
++    		if(!(opt.flags & FLAG_QUIET)){
++    			printf("SMBIOS %u.%u present.\n", smb->SMBIOSMajorVersion, 
++                    smb->SMBIOSMinorVersion);
++            }
++            
++            //shows the smbios information
++	    dmi_table((u32)&smb->SMBIOSTableData[0], smb->Length, num_structures,
++    			(smb->SMBIOSMajorVersion<<8)+smb->SMBIOSMinorVersion, NULL);   
++            
++            free(smb);
++            goto exit_free;
++        break;
++        
++        case WIN_UNSUPORTED://prints error and exits
++            printf("\nDMIDECODE runs on Windows NT/2000/XP. Windows 9x/Me are not supported.\n");
++            goto exit_free;
++        break;
++        
++        default:
++            /*
++             * do nothing. Follow the code below, scans for the 
++             * SMBIOS table entry point, etc...
++             */
++        break;
++    }
++#endif  /*__WIN32__*/
++
+ 	if ((buf = mem_chunk(0xF0000, 0x10000, opt.devmem)) == NULL)
+ 	{
+ 		ret = 1;
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.10-orig/dmidecode.h dmidecode-2.10-src/dmidecode.h
+--- dmidecode-2.10-orig/dmidecode.h	2008-10-28 10:41:07.000000000 +0100
++++ dmidecode-2.10-src/dmidecode.h	2008-11-24 23:13:17.828125000 +0100
+@@ -18,12 +18,4 @@
+  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+  */
+ 
+-struct dmi_header
+-{
+-	u8 type;
+-	u8 length;
+-	u16 handle;
+-	u8 *data;
+-};
+-
+ const char *dmi_string(const struct dmi_header *dm, u8 s);
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.10-orig/types.h dmidecode-2.10-src/types.h
+--- dmidecode-2.10-orig/types.h	2008-10-26 13:50:22.000000000 +0100
++++ dmidecode-2.10-src/types.h	2008-11-24 23:13:26.734375000 +0100
+@@ -8,6 +8,23 @@ typedef unsigned short u16;
+ typedef signed short i16;
+ typedef unsigned int u32;
+ 
++struct dmi_header
++{
++	u8 type;
++	u8 length;
++	u16 handle;
++	u8 *data;
++};
++/*
++struct dmi_header
++struct dmi_header
++{
++	u8 type;
++	u8 length;
++	u16 handle;
++};
++*/
++
+ /*
+  * You may use the following defines to adjust the type definitions
+  * depending on the architecture:
+diff -ipuwr --binary --strip-trailing-cr -x '*.bak' -x '*.orig' -x '*.rej' -x '*.new' -x '*~' -x debian -x '*.po' -x '*.pot' dmidecode-2.10-orig/util.c dmidecode-2.10-src/util.c
+--- dmidecode-2.10-orig/util.c	2008-10-28 11:17:50.000000000 +0100
++++ dmidecode-2.10-src/util.c	2008-11-24 23:15:20.437500000 +0100
+@@ -30,12 +30,18 @@
+ 
+ #include "config.h"
+ 
++#ifdef __WIN32__
++    #include "winsmbios.h"
++#else
+ #ifdef USE_MMAP
+ #include <sys/mman.h>
+ #ifndef MAP_FAILED
+ #define MAP_FAILED ((void *) -1)
+ #endif /* !MAP_FAILED */
+ #endif /* USE MMAP */
++#endif /* __WIN32__ */
++
++
+ 
+ #include <stdio.h>
+ #include <stdlib.h>
+@@ -90,6 +96,15 @@ int checksum(const u8 *buf, size_t len)
+ 	return (sum == 0);
+ }
+ 
++
++#ifdef _WIN32
++
++void *mem_chunk(size_t base, size_t len, const char *devmem){
++	return mem_chunk_win(base, len);
++}
++
++#else
++
+ /*
+  * Copy a physical memory chunk into a memory buffer.
+  * This function allocates memory.
+@@ -164,6 +179,8 @@ void *mem_chunk(size_t base, size_t len,
+ 	return p;
+ }
+ 
++#endif /* _WIN32 */
++
+ int write_dump(size_t base, size_t len, const void *data, const char *dumpfile, int add)
+ {
+ 	FILE *f;
